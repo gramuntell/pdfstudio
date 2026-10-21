@@ -25,7 +25,7 @@ def _crash(exc_type, exc, tb) -> None:
             f.write(text + "\n")
     except Exception:
         pass
-    if sys.platform == "win32":
+    if sys.platform == "win32" and "--selftest" not in sys.argv:
         try:
             import ctypes
             ctypes.windll.user32.MessageBoxW(
