@@ -25,10 +25,15 @@ jobs:
         run: pyinstaller --noconfirm PDFStudio.spec
       - name: Prueba de humo del .exe
         shell: pwsh
+        timeout-minutes: 4
         run: |
-          $p = Start-Process "dist/PDF Studio/PDF Studio.exe" -ArgumentList "--selftest","$PWD/st.txt" -Wait -PassThru
-          Get-Content st.txt
-          if ($p.ExitCode -ne 0) { throw "selftest falló" }
+          $p = Start-Process "dist/PDF Studio/PDF Studio.exe" -ArgumentList "--selftest","$PWD/st.txt" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); $hung = $true }
+          if (Test-Path st.txt) { Get-Content st.txt }
+          $log = Join-Path $env:APPDATA "PDF Studio/error.log"
+          if (Test-Path $log) { Get-Content $log }
+          if ($hung) { throw "selftest colgado" }
+          if ($p.ExitCode -ne 0) { throw "selftest fallo" }
       - name: Versión
         id: v
         shell: pwsh
