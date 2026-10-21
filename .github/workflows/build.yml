@@ -1,0 +1,50 @@
+name: Build Windows installer
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Dependencias
+        run: pip install -r requirements-build.txt
+      - name: Datos de OCR (español, inglés)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force tessdata | Out-Null
+          foreach ($l in "spa","eng","osd") {
+            Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$l.traineddata" -OutFile "tessdata/$l.traineddata"
+          }
+      - name: Compilar con PyInstaller
+        run: pyinstaller --noconfirm PDFStudio.spec
+      - name: Prueba de humo del .exe
+        shell: pwsh
+        run: |
+          $p = Start-Process "dist/PDF Studio/PDF Studio.exe" -ArgumentList "--selftest","$PWD/st.txt" -Wait -PassThru
+          Get-Content st.txt
+          if ($p.ExitCode -ne 0) { throw "selftest falló" }
+      - name: Versión
+        id: v
+        shell: pwsh
+        run: |
+          $v = (Get-Content pdfstudio/version.py) -replace '.*"(.*)".*','$1'
+          "ver=$v" >> $env:GITHUB_OUTPUT
+      - name: Instalador (Inno Setup)
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.v.outputs.ver }} installer\PDFStudio.iss
+      - name: SHA-256
+        shell: pwsh
+        run: Get-FileHash dist-installer\*.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } | Out-File dist-installer\SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with: { name: installer, path: dist-installer/* }
+      - name: Publicar en Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with: { files: "dist-installer/*" }
